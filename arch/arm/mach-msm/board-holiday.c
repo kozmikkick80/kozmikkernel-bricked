@@ -149,6 +149,20 @@
 #define UI_INT2_N 34
 #define UI_INT3_N 14
 
+#ifdef CONFIG_CPU_FREQ_GOV_BADASS_2_PHASE
+int set_two_phase_freq_badass(int cpufreq);
+#endif
+#ifdef CONFIG_CPU_FREQ_GOV_BADASS_3_PHASE
+int set_three_phase_freq_badass(int cpufreq);
+#endif
+
+#ifdef CONFIG_CMDLINE_OPTIONS
+	/* setters for cmdline_gpu */
+	int set_kgsl_3d0_freq(unsigned int freq0, unsigned int freq1);
+	int set_kgsl_2d0_freq(unsigned int freq);
+	int set_kgsl_2d1_freq(unsigned int freq);
+#endif
+
 /* Macros assume PMIC GPIOs start at 0 */
 #define PM8058_GPIO_BASE			NR_MSM_GPIOS
 #define PM8058_GPIO_PM_TO_SYS(pm_gpio)		(pm_gpio + PM8058_GPIO_BASE)
@@ -468,18 +482,27 @@ static struct msm_spm_platform_data msm_spm_data[] __initdata = {
 };
 
 #ifdef CONFIG_PERFLOCK
-static unsigned holiday_perf_acpu_table_1188k[] = {
+static unsigned holiday_perf_acpu_table[] = {
 	384000000,
 	756000000,
 	1188000000,
 };
-static unsigned holiday_perf_acpu_table_1512k[] = {
-	540000000,
-	1026000000,
-	1512000000,
+
+static struct perflock_platform_data holiday_perflock_data = {
+	.perf_acpu_table = holiday_perf_acpu_table,
+	.table_size = ARRAY_SIZE(holiday_perf_acpu_table),
 };
 
-static struct perflock_platform_data holiday_perflock_data;
+static unsigned holiday_cpufreq_ceiling_acpu_table[] = {
+	-1,
+	-1,
+	1026000000,
+};
+
+static struct perflock_platform_data holiday_cpufreq_ceiling_data = {
+	.perf_acpu_table = holiday_cpufreq_ceiling_acpu_table,
+	.table_size = ARRAY_SIZE(holiday_cpufreq_ceiling_acpu_table),
+};
 #endif
 
 /*
@@ -497,8 +520,8 @@ static struct regulator_init_data saw_s0_init_data = {
 		.constraints = {
 			.name = "8901_s0",
 			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
-			.min_uV = 840000,
-			.max_uV = 1250000,
+			.min_uV = 750000,
+			.max_uV = 1350000,
 		},
 		.consumer_supplies = vreg_consumers_8901_S0,
 		.num_consumer_supplies = ARRAY_SIZE(vreg_consumers_8901_S0),
@@ -508,8 +531,8 @@ static struct regulator_init_data saw_s1_init_data = {
 		.constraints = {
 			.name = "8901_s1",
 			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
-			.min_uV = 840000,
-			.max_uV = 1250000,
+			.min_uV = 750000,
+			.max_uV = 1350000,
 		},
 		.consumer_supplies = vreg_consumers_8901_S1,
 		.num_consumer_supplies = ARRAY_SIZE(vreg_consumers_8901_S1),
@@ -3149,9 +3172,9 @@ static struct regulator_consumer_supply vreg_consumers_PM8901_S4_PC[] = {
 
 /* RPM early regulator constraints */
 static struct rpm_regulator_init_data rpm_regulator_early_init_data[] = {
-	/*	 ID	   a_on pd ss min_uV   max_uV   init_ip	freq */
-	RPM_SMPS(PM8058_S0, 0, 1, 1,  500000, 1250000, SMPS_HMIN, 1p92),
-	RPM_SMPS(PM8058_S1, 0, 1, 1,  500000, 1250000, SMPS_HMIN, 1p92),
+	/*	 ID       a_on pd ss min_uV   max_uV   init_ip    freq */
+	RPM_SMPS(PM8058_S0, 0, 1, 1,  500000, 1350000, SMPS_HMIN, 1p92),
+	RPM_SMPS(PM8058_S1, 0, 1, 1,  500000, 1350000, SMPS_HMIN, 1p92),
 };
 
 /* RPM regulator constraints */
@@ -7070,18 +7093,26 @@ static void __init msm8x60_init(struct msm_board_data *board_data)
 	acpuclk_init(&acpuclk_8x60_soc_data);
 
 #ifdef CONFIG_PERFLOCK
-	if (holiday_perf_acpu_table_1188k[PERF_LOCK_HIGHEST] == get_max_cpu_freq() * 1000) {
-		holiday_perflock_data.perf_acpu_table = holiday_perf_acpu_table_1188k;
-		holiday_perflock_data.table_size = ARRAY_SIZE(holiday_perf_acpu_table_1188k);
-	} else {
-		holiday_perflock_data.perf_acpu_table = holiday_perf_acpu_table_1512k;
-		holiday_perflock_data.table_size = ARRAY_SIZE(holiday_perf_acpu_table_1512k);
-	}
 	perflock_init(&holiday_perflock_data);
+	cpufreq_ceiling_init(&holiday_cpufreq_ceiling_data);
 #endif
 
 #ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_2_PHASE
 	set_two_phase_freq(1134000);
+#endif
+
+#ifdef CONFIG_CPU_FREQ_GOV_BADASS_2_PHASE
+	set_two_phase_freq_badass(CONFIG_CPU_FREQ_GOV_BADASS_2_PHASE_FREQ);
+#endif
+#ifdef CONFIG_CPU_FREQ_GOV_BADASS_3_PHASE
+	set_three_phase_freq_badass(CONFIG_CPU_FREQ_GOV_BADASS_3_PHASE_FREQ);
+#endif
+
+#ifdef CONFIG_CPU_FREQ_GOV_BADASS_2_PHASE
+	set_two_phase_freq_badass(CONFIG_CPU_FREQ_GOV_BADASS_2_PHASE_FREQ);
+#endif
+#ifdef CONFIG_CPU_FREQ_GOV_BADASS_3_PHASE
+	set_three_phase_freq_badass(CONFIG_CPU_FREQ_GOV_BADASS_3_PHASE_FREQ);
 #endif
 
 	msm8x60_init_tlmm();
@@ -7101,6 +7132,13 @@ static void __init msm8x60_init(struct msm_board_data *board_data)
 	platform_add_devices(holiday_devices, ARRAY_SIZE(holiday_devices));
 
 	platform_add_devices(asoc_devices, ARRAY_SIZE(asoc_devices));
+
+#ifdef CONFIG_CMDLINE_OPTIONS
+	/* setters for cmdline_gpu */
+	set_kgsl_3d0_freq(cmdline_3dgpu[0], cmdline_3dgpu[1]);
+	set_kgsl_2d0_freq(cmdline_2dgpu);
+	set_kgsl_2d1_freq(cmdline_2dgpu);
+#endif
 
 #if defined(CONFIG_SPI_QUP) || defined(CONFIG_SPI_QUP_MODULE)
 	platform_device_register(&msm_gsbi1_qup_spi_device);
@@ -7145,7 +7183,6 @@ static void __init msm8x60_init(struct msm_board_data *board_data)
 	gpio_tlmm_config(msm_spi_gpio[1], GPIO_CFG_ENABLE);
 	gpio_tlmm_config(msm_spi_gpio[2], GPIO_CFG_ENABLE);
 	gpio_tlmm_config(msm_spi_gpio[3], GPIO_CFG_ENABLE);
-
 	holiday_audio_init();
 #endif
 
